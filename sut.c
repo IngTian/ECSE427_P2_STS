@@ -65,7 +65,7 @@ void *C_EXEC() {
         if (next_thread != NULL)
             swapcontext(current_context, next_thread->data);
         else
-            printf("CEXE PUT TO SLEEP\n") && usleep(100);
+            usleep(100);
     }
 }
 
@@ -92,7 +92,7 @@ void *I_EXEC() {
         if (next_thread != NULL)
             swapcontext(current_context, next_thread->data);
         else
-            printf("IEXE PUT TO SLEEP\n") && usleep(100);
+            usleep(100);
     }
 }
 
@@ -132,8 +132,8 @@ struct queue_entry *pop_wait_queue() {
 struct thread_context *get_parent_thread_context(pid_t thread_id) {
     struct thread_context *result = NULL;
     pthread_mutex_lock(&g_num_threads_lock);
-    for (int i = 0; i < g_number_of_threads; ++i)
-        if (!g_parent_context_array[i] && g_parent_context_array[i]->thread_id == thread_id) {
+    for (int i = 0; i < NUM_OF_C_EXEC + NUM_OF_I_EXEC; ++i)
+        if (g_parent_context_array[i] && g_parent_context_array[i]->thread_id == thread_id) {
             result = g_parent_context_array[i];
             break;
         }
