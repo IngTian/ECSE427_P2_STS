@@ -5,6 +5,7 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <ucontext.h>
@@ -212,8 +213,9 @@ void sut_yield() {
  * Terminate execution.
  */
 void sut_exit() {
-    ucontext_t *parent_context = get_parent_thread_context(gettid())->context;
-    setcontext(parent_context);
+    ucontext_t *my_context = (ucontext_t *)malloc(sizeof(ucontext_t));
+    getcontext(my_context);
+    swapcontext(my_context, get_parent_thread_context(gettid())->context);
 }
 
 /**
@@ -234,7 +236,7 @@ int sut_open(char *dest) {
 
     // When I_EXE executes us, we shall execute the I/O.
     // After the I/O completes, we shall wait for C_EXE.
-    fd = open(dest, 00700);
+    fd = open(dest, O_WRONLY | O_CREAT | O_TRUNC, 0777);
     append_to_ready_queue(queue_new_node(my_context));
     swapcontext(my_context, get_parent_thread_context(gettid())->context);
 

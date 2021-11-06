@@ -5,7 +5,7 @@
 void hello1() {
     int i, fd;
     char sbuf[128];
-    fd = sut_open("./test4.txt");
+    fd = sut_open("./test.txt");
     if (fd < 0)
         printf("Error: sut_open() failed\n");
     else {
@@ -31,6 +31,8 @@ void hello2() {
 int main() {
     sut_init();
     sut_create(hello1);
-    sut_create(hello2);
+    // sut_create(hello2);
+    while (true)
+        ;
     sut_shutdown();
 }
