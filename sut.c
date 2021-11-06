@@ -45,12 +45,6 @@ void append_to_wait_queue(struct queue_entry *new_entry) {
     pthread_mutex_unlock(&g_wait_queue_lock);
 }
 
-void append_to_parent_context_queue(struct queue_entry *new_entry) {
-    pthread_mutex_lock(&g_parent_context_queue_lock);
-    queue_insert_tail(&g_parent_context_queue, new_entry);
-    pthread_mutex_unlock(&g_parent_context_queue_lock);
-}
-
 struct queue_entry *pop_ready_queue() {
     struct queue_entry *result;
     pthread_mutex_lock(&g_ready_queue_lock);
@@ -67,7 +61,7 @@ struct queue_entry *pop_wait_queue() {
     return result;
 }
 
-struct thread_context *get_parent_thread_context(pthread_id_np_t thread_id) {
+struct thread_context *get_parent_thread_context(pid_t thread_id) {
     for (int i = 0; i < g_number_of_threads; ++i)
         if (!g_parent_context_array[i] && g_parent_context_array[i]->thread_id == thread_id)
             return g_parent_context_array[i];
@@ -82,7 +76,7 @@ void append_parent_thread_context(struct thread_context *new_context) {
 
 void swap_back_to_parent_context(ucontext_t* current_context){
     ucontext_t *parent_context = get_parent_thread_context(gettid());
-    swapcontext();
+    swapcontext(&current_context, parent_context);
 }
 
 // -------------------------------------------------------------------------
