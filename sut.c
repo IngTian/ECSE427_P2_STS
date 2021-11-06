@@ -58,7 +58,7 @@ void *C_EXEC() {
     printf("---CEXEC RUNNING---\nTID: %d\n", current_thread_id);
 
     while (true) {
-        if (!get_parent_thread_context(gettid())->run)
+        if (context_container->run == false)
             pthread_exit(NULL);
 
         struct queue_entry *next_thread = pop_ready_queue();
@@ -85,7 +85,7 @@ void *I_EXEC() {
     printf("---IEXEC RUNNING---\nTID: %d\n", current_thread_id);
 
     while (true) {
-        if (!get_parent_thread_context(gettid())->run)
+        if (context_container->run == false)
             pthread_exit(NULL);
 
         struct queue_entry *next_thread = pop_wait_queue();
@@ -316,11 +316,15 @@ char *sut_read(int fd, char *buf, int size) {
  * Shut down the Thread Scheduling Library.
  */
 void sut_shutdown() {
+    while (g_number_of_threads < NUM_OF_C_EXEC + NUM_OF_I_EXEC)
+        usleep(100);
 
     // Command all kernel threads to stop.
     pthread_mutex_lock(&g_num_threads_lock);
-    for (int i = 1; i < 3 && g_parent_context_array[i]; i++)
+    for (int i = 0; i < NUM_OF_C_EXEC + NUM_OF_I_EXEC; i++) {
         g_parent_context_array[i]->run = false;
+        printf("TERMINATING THREAD %d IDX: %d\n", g_parent_context_array[i]->thread_id, i);
+    }
     pthread_mutex_unlock(&g_num_threads_lock);
 
     // Wait for all kernel threads to complete.
