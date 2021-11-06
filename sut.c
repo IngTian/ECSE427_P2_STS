@@ -13,6 +13,7 @@
 typedef struct thread_context {
     pid_t thread_id;
     ucontext_t *context;
+    bool run;
 } thread_context;
 
 pid_t gettid();
@@ -52,10 +53,14 @@ void *C_EXEC() {
     thread_context *context_container = (thread_context *)malloc(sizeof(thread_context));
     context_container->thread_id = current_thread_id;
     context_container->context = current_context;
+    context_container->run = true;
     append_parent_thread_context(context_container);
     printf("---CEXEC RUNNING---\nTID: %d\n", current_thread_id);
 
     while (true) {
+        if (!get_parent_thread_context(gettid())->run)
+            pthread_exit(NULL);
+
         struct queue_entry *next_thread = pop_ready_queue();
         if (next_thread != NULL)
             swapcontext(current_context, next_thread->data);
@@ -75,10 +80,14 @@ void *I_EXEC() {
     thread_context *context_container = (thread_context *)malloc(sizeof(thread_context));
     context_container->thread_id = current_thread_id;
     context_container->context = current_context;
+    context_container->run = true;
     append_parent_thread_context(context_container);
     printf("---IEXEC RUNNING---\nTID: %d\n", current_thread_id);
 
     while (true) {
+        if (!get_parent_thread_context(gettid())->run)
+            pthread_exit(NULL);
+
         struct queue_entry *next_thread = pop_wait_queue();
         if (next_thread != NULL)
             swapcontext(current_context, next_thread->data);
@@ -121,10 +130,15 @@ struct queue_entry *pop_wait_queue() {
 }
 
 struct thread_context *get_parent_thread_context(pid_t thread_id) {
+    struct thread_context *result = NULL;
+    pthread_mutex_lock(&g_num_threads_lock);
     for (int i = 0; i < g_number_of_threads; ++i)
-        if (!g_parent_context_array[i] && g_parent_context_array[i]->thread_id == thread_id)
-            return g_parent_context_array[i];
-    return NULL;
+        if (!g_parent_context_array[i] && g_parent_context_array[i]->thread_id == thread_id) {
+            result = g_parent_context_array[i];
+            break;
+        }
+    pthread_mutex_unlock(&g_num_threads_lock);
+    return result;
 }
 
 void append_parent_thread_context(struct thread_context *new_context) {
@@ -302,7 +316,19 @@ char *sut_read(int fd, char *buf, int size) {
  * Shut down the Thread Scheduling Library.
  */
 void sut_shutdown() {
-    while (queue_peek_front(&g_threads_queue))
-        pthread_kill(*((pthread_t *)queue_pop_head(&g_threads_queue)->data), SIGUSR1);
-    exit(0);
+
+    // Command all kernel threads to stop.
+    pthread_mutex_lock(&g_num_threads_lock);
+    for (int i = 1; i < 3 && g_parent_context_array[i]; i++)
+        g_parent_context_array[i]->run = false;
+    pthread_mutex_unlock(&g_num_threads_lock);
+
+    // Wait for all kernel threads to complete.
+    while (queue_peek_front(&g_threads_queue)) {
+        pthread_t *thread = (pthread_t *)queue_pop_head(&g_threads_queue)->data;
+        pthread_join(*thread, NULL);
+    }
+
+    // Terminate the program.
+    exit(EXIT_SUCCESS);
 }
