@@ -1,4 +1,33 @@
 #include "sut.h"
+#include "queue/queue.h"
+#include <fcntl.h>
+#include <pthread.h>
+#include <signal.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
+#include <ucontext.h>
+#include <unistd.h>
+
+typedef struct thread_context {
+    pid_t thread_id;
+    ucontext_t *context;
+} thread_context;
+
+pid_t gettid();
+
+void append_to_ready_queue(struct queue_entry *new_entry);
+
+void append_to_wait_queue(struct queue_entry *new_entry);
+
+struct queue_entry *pop_ready_queue();
+
+struct queue_entry *pop_wait_queue();
+
+struct thread_context *get_parent_thread_context(pid_t thread_id);
+
+void append_parent_thread_context(struct thread_context *new_context);
 
 // -------------------------------------------------------------------------
 // ---------------------------- GLOBAL VARIABLES ---------------------------
@@ -24,13 +53,14 @@ void *C_EXEC() {
     context_container->thread_id = current_thread_id;
     context_container->context = current_context;
     append_parent_thread_context(context_container);
+    printf("---CEXEC RUNNING---\nTID: %d\n", current_thread_id);
 
     while (true) {
-        ucontext_t *next_thread = pop_ready_queue()->data;
+        struct queue_entry *next_thread = pop_ready_queue();
         if (next_thread != NULL)
-            swapcontext(current_context, next_thread);
+            swapcontext(current_context, next_thread->data);
         else
-            usleep(100);
+            printf("CEXE PUT TO SLEEP\n") && usleep(100);
     }
 }
 
@@ -46,13 +76,14 @@ void *I_EXEC() {
     context_container->thread_id = current_thread_id;
     context_container->context = current_context;
     append_parent_thread_context(context_container);
+    printf("---IEXEC RUNNING---\nTID: %d\n", current_thread_id);
 
     while (true) {
-        ucontext_t *next_thread = pop_wait_queue()->data;
+        struct queue_entry *next_thread = pop_wait_queue();
         if (next_thread != NULL)
-            swapcontext(current_context, next_thread);
+            swapcontext(current_context, next_thread->data);
         else
-            usleep(100);
+            printf("IEXE PUT TO SLEEP\n") && usleep(100);
     }
 }
 
@@ -109,15 +140,20 @@ void append_parent_thread_context(struct thread_context *new_context) {
  * Init the User Scheduling Library.
  */
 void sut_init() {
+    printf("START SUT\n");
     // Initialize global variables.
     g_number_of_threads = 0;
     g_ready_queue = queue_create();
     g_wait_queue = queue_create();
     g_threads_queue = queue_create();
+    queue_init(&g_ready_queue);
+    queue_init(&g_wait_queue);
+    queue_init(&g_threads_queue);
     pthread_mutex_init(&g_ready_queue_lock, NULL);
     pthread_mutex_init(&g_wait_queue_lock, NULL);
     pthread_mutex_init(&g_num_threads_lock, NULL);
 
+    printf("START CREATING KERNEL THREADS\n");
     // Create kernel threads.
     pthread_t *i_exe = (pthread_t *)malloc(sizeof(pthread_t));
     pthread_create(i_exe, NULL, I_EXEC, NULL);
@@ -128,6 +164,8 @@ void sut_init() {
         pthread_create(c_exe, NULL, C_EXEC, NULL);
         queue_insert_tail(&g_threads_queue, queue_new_node(c_exe));
     }
+
+    printf("SUT INITIATED\n");
 }
 
 /**
@@ -136,6 +174,7 @@ void sut_init() {
  * @return True for success, and false otherwise.
  */
 bool sut_create(sut_task_f fn) {
+    printf("CREATING A NEW USER THREAD\n");
     ucontext_t *new_context = (ucontext_t *)malloc(sizeof(ucontext_t));
     getcontext(new_context);
     new_context->uc_stack.ss_sp = (char *)malloc(THREAD_STACK_SIZE);
@@ -251,7 +290,8 @@ char *sut_read(int fd, char *buf, int size) {
 
     // When I_EXE executes us, we shall execute the I/O.
     // After the I/O completes, we shall wait for C_EXE.
-    read(fd, buf, size);
+    if (read(fd, buf, size) <= 0)
+        result = NULL;
     append_to_ready_queue(queue_new_node(my_context));
     swapcontext(my_context, get_parent_thread_context(gettid())->context);
 
@@ -263,6 +303,6 @@ char *sut_read(int fd, char *buf, int size) {
  */
 void sut_shutdown() {
     while (queue_peek_front(&g_threads_queue))
-        pthread_kill(queue_pop_head(&g_threads_queue)->data, SIGUSR1);
+        pthread_kill(*((pthread_t *)queue_pop_head(&g_threads_queue)->data), SIGUSR1);
     exit(0);
 }
