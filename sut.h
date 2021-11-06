@@ -1,6 +1,17 @@
 #ifndef __SUT_H__
 #define __SUT_H__
 #include <stdbool.h>
+#include "unistd.h"
+#include "ucontext.h"
+#include "pthread.h"
+#include "sys/types.h"
+#include "sys/syscall.h"
+#include "queue/queue.h"
+
+struct thread_context {
+    pthread_id_np_t thread_id;
+    ucontext_t* context;
+};
 
 typedef void (*sut_task_f)();
 
