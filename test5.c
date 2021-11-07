@@ -56,7 +56,5 @@ int main() {
     sut_init();
     sut_create(hello1);
     sut_create(hello2);
-    while (true)
-        ;
     sut_shutdown();
 }

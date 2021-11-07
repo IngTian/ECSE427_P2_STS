@@ -38,8 +38,8 @@ void append_parent_thread_context(struct thread_context *new_context);
 const int NUM_OF_C_EXEC = 1, NUM_OF_I_EXEC = 1, THREAD_STACK_SIZE = 1024 * 4;
 struct queue g_ready_queue, g_wait_queue, g_threads_queue;
 struct thread_context *g_parent_context_array[3] = {NULL, NULL, NULL};
-int g_number_of_threads;
-pthread_mutex_t g_ready_queue_lock, g_wait_queue_lock, g_num_threads_lock;
+int g_number_of_threads, g_num_of_tasks;
+pthread_mutex_t g_ready_queue_lock, g_wait_queue_lock, g_num_threads_lock, g_num_tasks_lock;
 
 // -------------------------------------------------------------------------
 // -------------------------------- EXECUTORS ------------------------------
@@ -60,7 +60,7 @@ void *C_EXEC() {
     printf("---CEXEC RUNNING---\nTID: %d\n", current_thread_id);
 
     while (true) {
-        if (context_container->run == false && !queue_peek_front(&g_ready_queue))
+        if (context_container->run == false && !g_num_of_tasks)
             pthread_exit(NULL);
 
         struct queue_entry *next_thread = pop_ready_queue();
@@ -90,7 +90,7 @@ void *I_EXEC() {
     printf("---IEXEC RUNNING---\nTID: %d\n", current_thread_id);
 
     while (true) {
-        if (context_container->run == false && !queue_peek_front(&g_wait_queue))
+        if (context_container->run == false && !g_num_of_tasks)
             pthread_exit(NULL);
 
         struct queue_entry *next_thread = pop_wait_queue();
@@ -155,6 +155,18 @@ void append_parent_thread_context(struct thread_context *new_context) {
     pthread_mutex_unlock(&g_num_threads_lock);
 }
 
+void increment_num_of_tasks() {
+    pthread_mutex_lock(&g_num_tasks_lock);
+    g_num_of_tasks++;
+    pthread_mutex_unlock(&g_num_tasks_lock);
+}
+
+void decrement_num_of_tasks() {
+    pthread_mutex_lock(&g_num_tasks_lock);
+    g_num_of_tasks--;
+    pthread_mutex_unlock(&g_num_tasks_lock);
+}
+
 // -------------------------------------------------------------------------
 // ------------------------------ PUBLIC APIs ------------------------------
 // -------------------------------------------------------------------------
@@ -165,6 +177,7 @@ void sut_init() {
     printf("START SUT\n");
     // Initialize global variables.
     g_number_of_threads = 0;
+    g_num_of_tasks = 0;
     g_ready_queue = queue_create();
     g_wait_queue = queue_create();
     g_threads_queue = queue_create();
@@ -174,6 +187,7 @@ void sut_init() {
     pthread_mutex_init(&g_ready_queue_lock, NULL);
     pthread_mutex_init(&g_wait_queue_lock, NULL);
     pthread_mutex_init(&g_num_threads_lock, NULL);
+    pthread_mutex_init(&g_num_tasks_lock, NULL);
 
     printf("START CREATING KERNEL THREADS\n");
     // Create kernel threads.
@@ -204,6 +218,7 @@ bool sut_create(sut_task_f fn) {
     makecontext(new_context, fn, 0);
     append_to_ready_queue(queue_new_node(new_context));
     printf("NEW USER THREAD CREATED\n");
+    increment_num_of_tasks();
     return 1;
 }
 
@@ -220,7 +235,10 @@ void sut_yield() {
 /**
  * Terminate execution.
  */
-void sut_exit() { setcontext(get_parent_thread_context(gettid())->context); }
+void sut_exit() {
+    decrement_num_of_tasks();
+    setcontext(get_parent_thread_context(gettid())->context);
+}
 
 /**
  * Open a file
