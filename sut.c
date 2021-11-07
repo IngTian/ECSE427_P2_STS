@@ -5,6 +5,7 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -63,9 +64,12 @@ void *C_EXEC() {
             pthread_exit(NULL);
 
         struct queue_entry *next_thread = pop_ready_queue();
-        if (next_thread != NULL)
+        if (next_thread != NULL) {
             swapcontext(current_context, next_thread->data);
-        else
+            // Clear memory.
+            free(next_thread->data);
+            free(next_thread);
+        } else
             usleep(100);
     }
 }
@@ -90,9 +94,12 @@ void *I_EXEC() {
             pthread_exit(NULL);
 
         struct queue_entry *next_thread = pop_wait_queue();
-        if (next_thread != NULL)
+        if (next_thread != NULL) {
             swapcontext(current_context, next_thread->data);
-        else
+            // Clear memory.
+            free(next_thread->data);
+            free(next_thread);
+        } else
             usleep(100);
     }
 }
@@ -234,6 +241,7 @@ int sut_open(char *dest) {
     // When I_EXE executes us, we shall execute the I/O.
     // After the I/O completes, we shall wait for C_EXE.
     fd = open(dest, O_RDWR | O_CREAT, 0777);
+    my_context = (ucontext_t *)malloc(sizeof(ucontext_t));
     append_to_ready_queue(queue_new_node(my_context));
     swapcontext(my_context, get_parent_thread_context(gettid())->context);
 
@@ -251,6 +259,7 @@ void sut_write(int fd, char *buf, int size) {
     // First of all, we append ourselves to
     // the wait queue and transfer our control
     // back to C_EXE.
+    printf("PRINTINTG MESSAGE: %s\nSIZE: %d\n", buf, size);
     ucontext_t *my_context = (ucontext_t *)malloc(sizeof(ucontext_t));
     getcontext(my_context);
     append_to_wait_queue(queue_new_node(my_context));
@@ -259,6 +268,7 @@ void sut_write(int fd, char *buf, int size) {
     // When I_EXE executes us, we shall execute the I/O.
     // After the I/O completes, we shall wait for C_EXE.
     write(fd, buf, size);
+    my_context = (ucontext_t *)malloc(sizeof(ucontext_t));
     append_to_ready_queue(queue_new_node(my_context));
     swapcontext(my_context, get_parent_thread_context(gettid())->context);
 }
@@ -279,6 +289,7 @@ void sut_close(int fd) {
     // When I_EXE executes us, we shall execute the I/O.
     // After the I/O completes, we shall wait for C_EXE.
     close(fd);
+    my_context = (ucontext_t *)malloc(sizeof(ucontext_t));
     append_to_ready_queue(queue_new_node(my_context));
     swapcontext(my_context, get_parent_thread_context(gettid())->context);
 }
@@ -305,6 +316,7 @@ char *sut_read(int fd, char *buf, int size) {
     // After the I/O completes, we shall wait for C_EXE.
     if (read(fd, buf, size) <= 0)
         result = NULL;
+    my_context = (ucontext_t *)malloc(sizeof(ucontext_t));
     append_to_ready_queue(queue_new_node(my_context));
     swapcontext(my_context, get_parent_thread_context(gettid())->context);
 
