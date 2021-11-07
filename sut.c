@@ -77,7 +77,7 @@ void *C_EXEC() {
  */
 void *I_EXEC() {
     pid_t current_thread_id = gettid();
-    ucontext_t *current_context = (ucontext_t *)malloc(sizeof(ucontext_t *));
+    ucontext_t *current_context = (ucontext_t *)malloc(sizeof(ucontext_t));
     thread_context *context_container = (thread_context *)malloc(sizeof(thread_context));
     context_container->thread_id = current_thread_id;
     context_container->context = current_context;
@@ -212,11 +212,7 @@ void sut_yield() {
 /**
  * Terminate execution.
  */
-void sut_exit() {
-    ucontext_t *my_context = (ucontext_t *)malloc(sizeof(ucontext_t));
-    getcontext(my_context);
-    swapcontext(my_context, get_parent_thread_context(gettid())->context);
-}
+void sut_exit() { setcontext(get_parent_thread_context(gettid())->context); }
 
 /**
  * Open a file
