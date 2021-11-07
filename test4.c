@@ -31,8 +31,6 @@ void hello2() {
 int main() {
     sut_init();
     sut_create(hello1);
-    // sut_create(hello2);
-    while (true)
-        ;
+    sut_create(hello2);
     sut_shutdown();
 }

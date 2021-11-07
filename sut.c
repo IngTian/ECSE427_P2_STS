@@ -35,7 +35,7 @@ void append_parent_thread_context(struct thread_context *new_context);
 // -------------------------------------------------------------------------
 // ---------------------------- GLOBAL VARIABLES ---------------------------
 // -------------------------------------------------------------------------
-const int NUM_OF_C_EXEC = 1, NUM_OF_I_EXEC = 1, THREAD_STACK_SIZE = 1024 * 64;
+const int NUM_OF_C_EXEC = 1, NUM_OF_I_EXEC = 1, THREAD_STACK_SIZE = 1024 * 4;
 struct queue g_ready_queue, g_wait_queue, g_threads_queue;
 struct thread_context *g_parent_context_array[3] = {NULL, NULL, NULL};
 int g_number_of_threads;
@@ -60,7 +60,7 @@ void *C_EXEC() {
     printf("---CEXEC RUNNING---\nTID: %d\n", current_thread_id);
 
     while (true) {
-        if (context_container->run == false)
+        if (context_container->run == false && queue_peek_front(&g_ready_queue) == NULL)
             pthread_exit(NULL);
 
         struct queue_entry *next_thread = pop_ready_queue();
@@ -90,7 +90,7 @@ void *I_EXEC() {
     printf("---IEXEC RUNNING---\nTID: %d\n", current_thread_id);
 
     while (true) {
-        if (context_container->run == false)
+        if (context_container->run == false && queue_peek_front(&g_wait_queue) == NULL)
             pthread_exit(NULL);
 
         struct queue_entry *next_thread = pop_wait_queue();
