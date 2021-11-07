@@ -196,6 +196,7 @@ bool sut_create(sut_task_f fn) {
     new_context->uc_stack.ss_size = THREAD_STACK_SIZE;
     makecontext(new_context, fn, 0);
     append_to_ready_queue(queue_new_node(new_context));
+    printf("NEW USER THREAD CREATED\n");
     return 1;
 }
 
@@ -232,7 +233,7 @@ int sut_open(char *dest) {
 
     // When I_EXE executes us, we shall execute the I/O.
     // After the I/O completes, we shall wait for C_EXE.
-    fd = open(dest, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+    fd = open(dest, O_RDWR | O_CREAT, 0777);
     append_to_ready_queue(queue_new_node(my_context));
     swapcontext(my_context, get_parent_thread_context(gettid())->context);
 
