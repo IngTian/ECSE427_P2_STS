@@ -14,5 +14,4 @@ void sut_close(int fd);
 char *sut_read(int fd, char *buf, int size);
 void sut_shutdown();
 
-
 #endif

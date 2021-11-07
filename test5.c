@@ -2,11 +2,13 @@
 #include <stdio.h>
 #include <string.h>
 
+void hello3();
+
 void hello1() {
     int i, fd;
     char write_sbuf[128];
     fd = sut_open("./test5.txt");
-    if (fd < 0) 
+    if (fd < 0)
         printf("Error: sut_open() failed \n");
     else {
         for (i = 0; i < 5; i++) {
@@ -17,7 +19,7 @@ void hello1() {
         sut_close(fd);
         sut_create(hello3);
     }
-    
+
     sut_exit();
 }
 
@@ -33,7 +35,7 @@ void hello2() {
 void hello3() {
     int i, fd;
     int buf_size = 2048;
-    char read_sbuf[buf_size]; 
+    char read_sbuf[buf_size];
     fd = sut_open("./test5.txt");
     sut_yield();
     if (fd < 0)
