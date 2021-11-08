@@ -44,8 +44,9 @@ ucontext_t *initialize_context();
 const int NUM_OF_C_EXEC = 2, NUM_OF_I_EXEC = 1, THREAD_STACK_SIZE = 1024 * 16;
 struct queue g_ready_queue, g_wait_queue, g_threads_queue;
 struct thread_context *g_parent_context_array[3] = {NULL, NULL, NULL};
-int g_number_of_threads, g_num_of_tasks;
-pthread_mutex_t g_ready_queue_lock, g_wait_queue_lock, g_num_threads_lock, g_num_tasks_lock;
+int g_number_of_kernel_threads, g_num_of_tasks;
+pthread_mutex_t g_ready_queue_lock, g_wait_queue_lock, g_parent_context_array_lock,
+    g_num_tasks_lock;
 
 // -------------------------------------------------------------------------
 // -------------------------------- EXECUTORS ------------------------------
@@ -63,7 +64,6 @@ void *C_EXEC() {
     context_container->context = current_context;
     context_container->run = true;
     append_parent_thread_context(context_container);
-    printf("---CEXEC RUNNING---\nTID: %d\n", current_thread_id);
 
     while (true) {
         if (context_container->run == false && g_num_of_tasks == 0)
@@ -93,7 +93,6 @@ void *I_EXEC() {
     context_container->context = current_context;
     context_container->run = true;
     append_parent_thread_context(context_container);
-    printf("---IEXEC RUNNING---\nTID: %d\n", current_thread_id);
 
     while (true) {
         if (context_container->run == false && g_num_of_tasks == 0)
@@ -113,20 +112,40 @@ void *I_EXEC() {
 // -------------------------------------------------------------------------
 // ----------------------------- UTIL FUNCTIONS ----------------------------
 // -------------------------------------------------------------------------
+/**
+ * @brief Obtain the current thread ID.
+ *
+ * @return pid_t
+ */
 pid_t gettid(void) { return syscall(SYS_gettid); }
 
+/**
+ * @brief Append a TCB to the ready queue.
+ *
+ * @param new_entry
+ */
 void append_to_ready_queue(struct queue_entry *new_entry) {
     pthread_mutex_lock(&g_ready_queue_lock);
     queue_insert_tail(&g_ready_queue, new_entry);
     pthread_mutex_unlock(&g_ready_queue_lock);
 }
 
+/**
+ * @brief Append a TCB to the wait queue.
+ *
+ * @param new_entry
+ */
 void append_to_wait_queue(struct queue_entry *new_entry) {
     pthread_mutex_lock(&g_wait_queue_lock);
     queue_insert_tail(&g_wait_queue, new_entry);
     pthread_mutex_unlock(&g_wait_queue_lock);
 }
 
+/**
+ * @brief Pop a TCB from the ready queue.
+ *
+ * @return struct queue_entry*
+ */
 struct queue_entry *pop_ready_queue() {
     struct queue_entry *result;
     pthread_mutex_lock(&g_ready_queue_lock);
@@ -135,6 +154,11 @@ struct queue_entry *pop_ready_queue() {
     return result;
 }
 
+/**
+ * @brief Pop a TCB from the wait queue.
+ *
+ * @return struct queue_entry*
+ */
 struct queue_entry *pop_wait_queue() {
     struct queue_entry *result;
     pthread_mutex_lock(&g_wait_queue_lock);
@@ -143,22 +167,33 @@ struct queue_entry *pop_wait_queue() {
     return result;
 }
 
+/**
+ * @brief Get the parent executor's context.
+ *
+ * @param thread_id The current thread ID.
+ * @return struct thread_context* The executor's context.
+ */
 struct thread_context *get_parent_thread_context(pid_t thread_id) {
     struct thread_context *result = NULL;
-    pthread_mutex_lock(&g_num_threads_lock);
+    pthread_mutex_lock(&g_parent_context_array_lock);
     for (int i = 0; i < NUM_OF_C_EXEC + NUM_OF_I_EXEC; i++)
         if (g_parent_context_array[i] && g_parent_context_array[i]->thread_id == thread_id) {
             result = g_parent_context_array[i];
             break;
         }
-    pthread_mutex_unlock(&g_num_threads_lock);
+    pthread_mutex_unlock(&g_parent_context_array_lock);
     return result;
 }
 
+/**
+ * @brief Append a new executor's context.
+ *
+ * @param new_context
+ */
 void append_parent_thread_context(struct thread_context *new_context) {
-    pthread_mutex_lock(&g_num_threads_lock);
-    g_parent_context_array[g_number_of_threads++] = new_context;
-    pthread_mutex_unlock(&g_num_threads_lock);
+    pthread_mutex_lock(&g_parent_context_array_lock);
+    g_parent_context_array[g_number_of_kernel_threads++] = new_context;
+    pthread_mutex_unlock(&g_parent_context_array_lock);
 }
 
 void increment_num_of_tasks() {
@@ -190,9 +225,8 @@ ucontext_t *initialize_context() {
  * Init the User Scheduling Library.
  */
 void sut_init() {
-    printf("START SUT\n");
     // Initialize global variables.
-    g_number_of_threads = 0;
+    g_number_of_kernel_threads = 0;
     g_num_of_tasks = 0;
     g_ready_queue = queue_create();
     g_wait_queue = queue_create();
@@ -202,10 +236,9 @@ void sut_init() {
     queue_init(&g_threads_queue);
     pthread_mutex_init(&g_ready_queue_lock, NULL);
     pthread_mutex_init(&g_wait_queue_lock, NULL);
-    pthread_mutex_init(&g_num_threads_lock, NULL);
+    pthread_mutex_init(&g_parent_context_array_lock, NULL);
     pthread_mutex_init(&g_num_tasks_lock, NULL);
 
-    printf("START CREATING KERNEL THREADS\n");
     // Create kernel threads.
     pthread_t *i_exe = (pthread_t *)malloc(sizeof(pthread_t));
     pthread_create(i_exe, NULL, I_EXEC, NULL);
@@ -216,8 +249,6 @@ void sut_init() {
         pthread_create(c_exe, NULL, C_EXEC, NULL);
         queue_insert_tail(&g_threads_queue, queue_new_node(c_exe));
     }
-
-    printf("SUT INITIATED\n");
 }
 
 /**
@@ -226,11 +257,9 @@ void sut_init() {
  * @return True for success, and false otherwise.
  */
 bool sut_create(sut_task_f fn) {
-    printf("CREATING A NEW USER THREAD\n");
     ucontext_t *new_context = initialize_context();
     makecontext(new_context, fn, 0);
     append_to_ready_queue(queue_new_node(new_context));
-    printf("NEW USER THREAD CREATED\n");
     increment_num_of_tasks();
     return 1;
 }
@@ -271,7 +300,7 @@ int sut_open(char *dest) {
 
     // When I_EXE executes us, we shall execute the I/O.
     // After the I/O completes, we shall wait for C_EXE.
-    fd = open(dest, O_RDWR | O_CREAT, 0777);
+    fd = open(dest, O_RDWR, 0777);
     my_context = initialize_context();
     parent_context = get_parent_thread_context(gettid())->context;
     append_to_ready_queue(queue_new_node(my_context));
@@ -291,7 +320,6 @@ void sut_write(int fd, char *buf, int size) {
     // First of all, we append ourselves to
     // the wait queue and transfer our control
     // back to C_EXE.
-    printf("PRINTINTG MESSAGE: %s\nSIZE: %d\n", buf, size);
     ucontext_t *my_context = initialize_context();
     ucontext_t *parent_context = get_parent_thread_context(gettid())->context;
     append_to_wait_queue(queue_new_node(my_context));
@@ -362,16 +390,15 @@ char *sut_read(int fd, char *buf, int size) {
  * Shut down the Thread Scheduling Library.
  */
 void sut_shutdown() {
-    while (g_number_of_threads < NUM_OF_C_EXEC + NUM_OF_I_EXEC)
+    while (g_number_of_kernel_threads < NUM_OF_C_EXEC + NUM_OF_I_EXEC)
         usleep(100);
 
     // Command all kernel threads to stop.
-    pthread_mutex_lock(&g_num_threads_lock);
+    pthread_mutex_lock(&g_parent_context_array_lock);
     for (int i = 0; i < NUM_OF_C_EXEC + NUM_OF_I_EXEC; i++) {
         g_parent_context_array[i]->run = false;
-        printf("TERMINATING THREAD %d IDX: %d\n", g_parent_context_array[i]->thread_id, i);
     }
-    pthread_mutex_unlock(&g_num_threads_lock);
+    pthread_mutex_unlock(&g_parent_context_array_lock);
 
     // Wait for all kernel threads to complete.
     while (queue_peek_front(&g_threads_queue)) {
