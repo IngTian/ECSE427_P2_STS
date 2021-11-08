@@ -35,7 +35,7 @@ void append_parent_thread_context(struct thread_context *new_context);
 // -------------------------------------------------------------------------
 // ---------------------------- GLOBAL VARIABLES ---------------------------
 // -------------------------------------------------------------------------
-const int NUM_OF_C_EXEC = 1, NUM_OF_I_EXEC = 1, THREAD_STACK_SIZE = 1024 * 4;
+const int NUM_OF_C_EXEC = 2, NUM_OF_I_EXEC = 1, THREAD_STACK_SIZE = 1024 * 16;
 struct queue g_ready_queue, g_wait_queue, g_threads_queue;
 struct thread_context *g_parent_context_array[3] = {NULL, NULL, NULL};
 int g_number_of_threads, g_num_of_tasks;
@@ -53,6 +53,11 @@ void *C_EXEC() {
     pid_t current_thread_id = gettid();
     ucontext_t *current_context = (ucontext_t *)malloc(sizeof(ucontext_t));
     thread_context *context_container = (thread_context *)malloc(sizeof(thread_context));
+    getcontext(current_context);
+    current_context->uc_stack.ss_sp = (char *)malloc(THREAD_STACK_SIZE);
+    current_context->uc_stack.ss_size = THREAD_STACK_SIZE;
+    current_context->uc_stack.ss_flags = 0;
+    current_context->uc_link = 0;
     context_container->thread_id = current_thread_id;
     context_container->context = current_context;
     context_container->run = true;
@@ -83,6 +88,11 @@ void *I_EXEC() {
     pid_t current_thread_id = gettid();
     ucontext_t *current_context = (ucontext_t *)malloc(sizeof(ucontext_t));
     thread_context *context_container = (thread_context *)malloc(sizeof(thread_context));
+    getcontext(current_context);
+    current_context->uc_stack.ss_sp = (char *)malloc(THREAD_STACK_SIZE);
+    current_context->uc_stack.ss_size = THREAD_STACK_SIZE;
+    current_context->uc_stack.ss_flags = 0;
+    current_context->uc_link = 0;
     context_container->thread_id = current_thread_id;
     context_container->context = current_context;
     context_container->run = true;
@@ -140,7 +150,7 @@ struct queue_entry *pop_wait_queue() {
 struct thread_context *get_parent_thread_context(pid_t thread_id) {
     struct thread_context *result = NULL;
     pthread_mutex_lock(&g_num_threads_lock);
-    for (int i = 0; i < NUM_OF_C_EXEC + NUM_OF_I_EXEC; ++i)
+    for (int i = 0; i < NUM_OF_C_EXEC + NUM_OF_I_EXEC; i++)
         if (g_parent_context_array[i] && g_parent_context_array[i]->thread_id == thread_id) {
             result = g_parent_context_array[i];
             break;
@@ -215,6 +225,8 @@ bool sut_create(sut_task_f fn) {
     getcontext(new_context);
     new_context->uc_stack.ss_sp = (char *)malloc(THREAD_STACK_SIZE);
     new_context->uc_stack.ss_size = THREAD_STACK_SIZE;
+    new_context->uc_link = 0;
+    new_context->uc_stack.ss_flags = 0;
     makecontext(new_context, fn, 0);
     append_to_ready_queue(queue_new_node(new_context));
     printf("NEW USER THREAD CREATED\n");
@@ -229,7 +241,8 @@ void sut_yield() {
     ucontext_t *my_context = (ucontext_t *)malloc(sizeof(ucontext_t));
     getcontext(my_context);
     append_to_ready_queue(queue_new_node(my_context));
-    swapcontext(my_context, get_parent_thread_context(gettid())->context);
+    ucontext_t *parent_context = get_parent_thread_context(gettid())->context;
+    swapcontext(my_context, parent_context);
 }
 
 /**
