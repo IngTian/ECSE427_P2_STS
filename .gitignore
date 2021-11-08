@@ -1,6 +1,12 @@
+# Exclude binary files.
+*
+!*.*
+
 /.idea
 /output
 /cmake-build-debug
 /build
 /.vscode
-[^\.]*
+
+# Exclude test outputs.
+*.txt
