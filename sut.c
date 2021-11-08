@@ -406,6 +406,7 @@ void sut_shutdown() {
         pthread_join(*thread, NULL);
     }
 
-    // Terminate the program.
-    exit(EXIT_SUCCESS);
+    // Clear memory.
+    for (int i = 0; i < NUM_OF_C_EXEC + NUM_OF_I_EXEC; i++)
+        free(g_parent_context_array[i]);
 }
