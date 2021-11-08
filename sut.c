@@ -265,15 +265,17 @@ int sut_open(char *dest) {
     // the wait queue and transfer our control
     // back to C_EXE.
     ucontext_t *my_context = initialize_context();
+    ucontext_t *parent_context = get_parent_thread_context(gettid())->context;
     append_to_wait_queue(queue_new_node(my_context));
-    swapcontext(my_context, get_parent_thread_context(gettid())->context);
+    swapcontext(my_context, parent_context);
 
     // When I_EXE executes us, we shall execute the I/O.
     // After the I/O completes, we shall wait for C_EXE.
     fd = open(dest, O_RDWR | O_CREAT, 0777);
     my_context = initialize_context();
+    parent_context = get_parent_thread_context(gettid())->context;
     append_to_ready_queue(queue_new_node(my_context));
-    swapcontext(my_context, get_parent_thread_context(gettid())->context);
+    swapcontext(my_context, parent_context);
 
     // When the operation resumes, simply return.
     return fd;
@@ -291,15 +293,17 @@ void sut_write(int fd, char *buf, int size) {
     // back to C_EXE.
     printf("PRINTINTG MESSAGE: %s\nSIZE: %d\n", buf, size);
     ucontext_t *my_context = initialize_context();
+    ucontext_t *parent_context = get_parent_thread_context(gettid())->context;
     append_to_wait_queue(queue_new_node(my_context));
-    swapcontext(my_context, get_parent_thread_context(gettid())->context);
+    swapcontext(my_context, parent_context);
 
     // When I_EXE executes us, we shall execute the I/O.
     // After the I/O completes, we shall wait for C_EXE.
     write(fd, buf, size);
     my_context = initialize_context();
+    parent_context = get_parent_thread_context(gettid())->context;
     append_to_ready_queue(queue_new_node(my_context));
-    swapcontext(my_context, get_parent_thread_context(gettid())->context);
+    swapcontext(my_context, parent_context);
 }
 
 /**
@@ -311,15 +315,17 @@ void sut_close(int fd) {
     // the wait queue and transfer our control
     // back to C_EXE.
     ucontext_t *my_context = initialize_context();
+    ucontext_t *parent_context = get_parent_thread_context(gettid())->context;
     append_to_wait_queue(queue_new_node(my_context));
-    swapcontext(my_context, get_parent_thread_context(gettid())->context);
+    swapcontext(my_context, parent_context);
 
     // When I_EXE executes us, we shall execute the I/O.
     // After the I/O completes, we shall wait for C_EXE.
     close(fd);
     my_context = initialize_context();
+    parent_context = get_parent_thread_context(gettid())->context;
     append_to_ready_queue(queue_new_node(my_context));
-    swapcontext(my_context, get_parent_thread_context(gettid())->context);
+    swapcontext(my_context, parent_context);
 }
 
 /**
@@ -336,16 +342,18 @@ char *sut_read(int fd, char *buf, int size) {
     // the wait queue and transfer our control
     // back to C_EXE.
     ucontext_t *my_context = initialize_context();
+    ucontext_t *parent_context = get_parent_thread_context(gettid())->context;
     append_to_wait_queue(queue_new_node(my_context));
-    swapcontext(my_context, get_parent_thread_context(gettid())->context);
+    swapcontext(my_context, parent_context);
 
     // When I_EXE executes us, we shall execute the I/O.
     // After the I/O completes, we shall wait for C_EXE.
     if (read(fd, buf, size) <= 0)
         result = NULL;
     my_context = initialize_context();
+    parent_context = get_parent_thread_context(gettid())->context;
     append_to_ready_queue(queue_new_node(my_context));
-    swapcontext(my_context, get_parent_thread_context(gettid())->context);
+    swapcontext(my_context, parent_context);
 
     return result;
 }
