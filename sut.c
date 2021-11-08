@@ -74,7 +74,6 @@ void *C_EXEC() {
             swapcontext(current_context, next_thread->data);
             // Clear memory.
             free(next_thread->data);
-            free(next_thread);
         } else
             usleep(100);
     }
@@ -103,7 +102,6 @@ void *I_EXEC() {
             swapcontext(current_context, next_thread->data);
             // Clear memory.
             free(next_thread->data);
-            free(next_thread);
         } else
             usleep(100);
     }
