@@ -1,7 +1,14 @@
+## How to run tests?
+Follow the example.
+```console
+gcc sut.c test1.c -pthread -o test
+./test
+```
+
 ## File Structure
 
 The Simple User Threadign Library, `sut.c`, is designed to work with the following file structure.
-``` Text
+```text
 ├── queue
 │   ├── queue_example.c
 │   └── queue.h
