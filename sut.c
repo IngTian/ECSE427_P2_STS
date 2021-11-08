@@ -409,8 +409,11 @@ void sut_shutdown() {
 
     // Wait for all kernel threads to complete.
     while (queue_peek_front(&g_threads_queue)) {
-        pthread_t *thread = (pthread_t *)queue_pop_head(&g_threads_queue)->data;
+        struct queue_entry *entry = queue_pop_head(&g_threads_queue);
+        pthread_t *thread = (pthread_t *)entry->data;
         pthread_join(*thread, NULL);
+        free(entry);
+        free(thread);
     }
 
     // Clear memory.
