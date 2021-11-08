@@ -65,7 +65,7 @@ void *C_EXEC() {
     printf("---CEXEC RUNNING---\nTID: %d\n", current_thread_id);
 
     while (true) {
-        if (context_container->run == false && !g_num_of_tasks)
+        if (context_container->run == false && g_num_of_tasks == 0)
             pthread_exit(NULL);
 
         struct queue_entry *next_thread = pop_ready_queue();
@@ -100,7 +100,7 @@ void *I_EXEC() {
     printf("---IEXEC RUNNING---\nTID: %d\n", current_thread_id);
 
     while (true) {
-        if (context_container->run == false && !g_num_of_tasks)
+        if (context_container->run == false && g_num_of_tasks == 0)
             pthread_exit(NULL);
 
         struct queue_entry *next_thread = pop_wait_queue();
