@@ -38,6 +38,8 @@ void decrement_num_of_tasks();
 
 ucontext_t *initialize_context();
 
+void free_context(ucontext_t *context);
+
 // -------------------------------------------------------------------------
 // ---------------------------- GLOBAL VARIABLES ---------------------------
 // -------------------------------------------------------------------------
@@ -73,7 +75,8 @@ void *C_EXEC() {
         if (next_thread != NULL) {
             swapcontext(current_context, next_thread->data);
             // Clear memory.
-            free(next_thread->data);
+            free_context(next_thread->data);
+            free(next_thread);
         } else
             usleep(100);
     }
@@ -101,7 +104,8 @@ void *I_EXEC() {
         if (next_thread != NULL) {
             swapcontext(current_context, next_thread->data);
             // Clear memory.
-            free(next_thread->data);
+            free_context(next_thread->data);
+            free(next_thread);
         } else
             usleep(100);
     }
@@ -214,6 +218,11 @@ ucontext_t *initialize_context() {
     new_context->uc_link = 0;
     getcontext(new_context);
     return new_context;
+}
+
+void free_context(ucontext_t *context) {
+    free(context->uc_stack.ss_sp);
+    free(context);
 }
 
 // -------------------------------------------------------------------------
@@ -405,6 +414,8 @@ void sut_shutdown() {
     }
 
     // Clear memory.
-    for (int i = 0; i < NUM_OF_C_EXEC + NUM_OF_I_EXEC; i++)
+    for (int i = 0; i < NUM_OF_C_EXEC + NUM_OF_I_EXEC; i++) {
+        free_context(g_parent_context_array[i]->context);
         free(g_parent_context_array[i]);
+    }
 }
