@@ -40,15 +40,17 @@ ucontext_t *initialize_context();
 
 void free_context(ucontext_t *context);
 
+void append_to_wasted_tcb_queue(struct queue_entry *wasted_entry);
+
 // -------------------------------------------------------------------------
 // ---------------------------- GLOBAL VARIABLES ---------------------------
 // -------------------------------------------------------------------------
 const int NUM_OF_C_EXEC = 2, NUM_OF_I_EXEC = 1, THREAD_STACK_SIZE = 1024 * 16;
-struct queue g_ready_queue, g_wait_queue, g_threads_queue;
+struct queue g_ready_queue, g_wait_queue, g_threads_queue, g_wasted_tcb_queue;
 struct thread_context *g_parent_context_array[3] = {NULL, NULL, NULL};
 int g_number_of_kernel_threads, g_num_of_tasks;
 pthread_mutex_t g_ready_queue_lock, g_wait_queue_lock, g_parent_context_array_lock,
-    g_num_tasks_lock;
+    g_num_tasks_lock, g_wasted_tcb_queue_lock;
 
 // -------------------------------------------------------------------------
 // -------------------------------- EXECUTORS ------------------------------
@@ -74,9 +76,8 @@ void *C_EXEC() {
         struct queue_entry *next_thread = pop_ready_queue();
         if (next_thread != NULL) {
             swapcontext(current_context, next_thread->data);
-            // Clear memory.
-            free_context(next_thread->data);
-            free(next_thread);
+            // Register wasted memory.
+            append_to_wasted_tcb_queue(next_thread);
         } else
             usleep(100);
     }
@@ -103,9 +104,8 @@ void *I_EXEC() {
         struct queue_entry *next_thread = pop_wait_queue();
         if (next_thread != NULL) {
             swapcontext(current_context, next_thread->data);
-            // Clear memory.
-            free_context(next_thread->data);
-            free(next_thread);
+            // Register wasted memory.
+            append_to_wasted_tcb_queue(next_thread);
         } else
             usleep(100);
     }
@@ -225,6 +225,12 @@ void free_context(ucontext_t *context) {
     free(context);
 }
 
+void append_to_wasted_tcb_queue(struct queue_entry *wasted_entry) {
+    pthread_mutex_lock(&g_wasted_tcb_queue_lock);
+    queue_insert_tail(&g_wasted_tcb_queue, queue_new_node(wasted_entry));
+    pthread_mutex_unlock(&g_wasted_tcb_queue_lock);
+}
+
 // -------------------------------------------------------------------------
 // ------------------------------ PUBLIC APIs ------------------------------
 // -------------------------------------------------------------------------
@@ -238,13 +244,16 @@ void sut_init() {
     g_ready_queue = queue_create();
     g_wait_queue = queue_create();
     g_threads_queue = queue_create();
+    g_wasted_tcb_queue = queue_create();
     queue_init(&g_ready_queue);
     queue_init(&g_wait_queue);
     queue_init(&g_threads_queue);
+    queue_init(&g_wasted_tcb_queue);
     pthread_mutex_init(&g_ready_queue_lock, NULL);
     pthread_mutex_init(&g_wait_queue_lock, NULL);
     pthread_mutex_init(&g_parent_context_array_lock, NULL);
     pthread_mutex_init(&g_num_tasks_lock, NULL);
+    pthread_mutex_init(&g_wasted_tcb_queue_lock, NULL);
 
     // Create kernel threads.
     pthread_t *i_exe = (pthread_t *)malloc(sizeof(pthread_t));
@@ -420,5 +429,15 @@ void sut_shutdown() {
     for (int i = 0; i < NUM_OF_C_EXEC + NUM_OF_I_EXEC; i++) {
         free_context(g_parent_context_array[i]->context);
         free(g_parent_context_array[i]);
+    }
+
+    struct queue_entry *wasted_tcb = queue_pop_head(&g_wasted_tcb_queue);
+    while (wasted_tcb) {
+        struct queue_entry *inner_entry = (struct queue_entry *)wasted_tcb->data;
+        ucontext_t *tcb = (ucontext_t *)inner_entry->data;
+        free_context(tcb);
+        free(inner_entry);
+        free(wasted_tcb);
+        wasted_tcb = queue_pop_head(&g_wasted_tcb_queue);
     }
 }
