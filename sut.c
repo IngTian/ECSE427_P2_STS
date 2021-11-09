@@ -16,6 +16,7 @@ typedef struct thread_context {
     pid_t thread_id;
     ucontext_t *context;
     bool run;
+    pthread_t thread;
 } thread_context;
 
 pid_t gettid();
@@ -46,10 +47,10 @@ void append_to_wasted_tcb_queue(struct queue_entry *wasted_entry);
 // ---------------------------- GLOBAL VARIABLES ---------------------------
 // -------------------------------------------------------------------------
 const int NUM_OF_C_EXEC = 2, NUM_OF_I_EXEC = 1, THREAD_STACK_SIZE = 1024 * 16;
-struct queue g_ready_queue, g_wait_queue, g_threads_queue, g_wasted_tcb_queue;
-struct thread_context *g_parent_context_array[3] = {NULL, NULL, NULL};
+struct queue g_ready_queue, g_wait_queue, g_wasted_tcb_queue;
+struct thread_context **g_executor_context_array;
 int g_number_of_kernel_threads, g_num_of_tasks;
-pthread_mutex_t g_ready_queue_lock, g_wait_queue_lock, g_parent_context_array_lock,
+pthread_mutex_t g_ready_queue_lock, g_wait_queue_lock, g_executor_context_array_lock,
     g_num_tasks_lock, g_wasted_tcb_queue_lock;
 
 // -------------------------------------------------------------------------
@@ -67,6 +68,7 @@ void *C_EXEC() {
     context_container->thread_id = current_thread_id;
     context_container->context = current_context;
     context_container->run = true;
+    context_container->thread = pthread_self();
     append_parent_thread_context(context_container);
 
     while (true) {
@@ -95,6 +97,7 @@ void *I_EXEC() {
     context_container->thread_id = current_thread_id;
     context_container->context = current_context;
     context_container->run = true;
+    context_container->thread = pthread_self();
     append_parent_thread_context(context_container);
 
     while (true) {
@@ -177,13 +180,13 @@ struct queue_entry *pop_wait_queue() {
  */
 struct thread_context *get_parent_thread_context(pid_t thread_id) {
     struct thread_context *result = NULL;
-    pthread_mutex_lock(&g_parent_context_array_lock);
+    pthread_mutex_lock(&g_executor_context_array_lock);
     for (int i = 0; i < NUM_OF_C_EXEC + NUM_OF_I_EXEC; i++)
-        if (g_parent_context_array[i] && g_parent_context_array[i]->thread_id == thread_id) {
-            result = g_parent_context_array[i];
+        if (g_executor_context_array[i] && g_executor_context_array[i]->thread_id == thread_id) {
+            result = g_executor_context_array[i];
             break;
         }
-    pthread_mutex_unlock(&g_parent_context_array_lock);
+    pthread_mutex_unlock(&g_executor_context_array_lock);
     return result;
 }
 
@@ -193,9 +196,9 @@ struct thread_context *get_parent_thread_context(pid_t thread_id) {
  * @param new_context
  */
 void append_parent_thread_context(struct thread_context *new_context) {
-    pthread_mutex_lock(&g_parent_context_array_lock);
-    g_parent_context_array[g_number_of_kernel_threads++] = new_context;
-    pthread_mutex_unlock(&g_parent_context_array_lock);
+    pthread_mutex_lock(&g_executor_context_array_lock);
+    g_executor_context_array[g_number_of_kernel_threads++] = new_context;
+    pthread_mutex_unlock(&g_executor_context_array_lock);
 }
 
 void increment_num_of_tasks() {
@@ -243,27 +246,27 @@ void sut_init() {
     g_num_of_tasks = 0;
     g_ready_queue = queue_create();
     g_wait_queue = queue_create();
-    g_threads_queue = queue_create();
     g_wasted_tcb_queue = queue_create();
     queue_init(&g_ready_queue);
     queue_init(&g_wait_queue);
-    queue_init(&g_threads_queue);
     queue_init(&g_wasted_tcb_queue);
     pthread_mutex_init(&g_ready_queue_lock, NULL);
     pthread_mutex_init(&g_wait_queue_lock, NULL);
-    pthread_mutex_init(&g_parent_context_array_lock, NULL);
+    pthread_mutex_init(&g_executor_context_array_lock, NULL);
     pthread_mutex_init(&g_num_tasks_lock, NULL);
     pthread_mutex_init(&g_wasted_tcb_queue_lock, NULL);
+    g_executor_context_array =
+        (thread_context **)malloc((NUM_OF_C_EXEC + NUM_OF_I_EXEC) * sizeof(thread_context *));
 
     // Create kernel threads.
     pthread_t *i_exe = (pthread_t *)malloc(sizeof(pthread_t));
     pthread_create(i_exe, NULL, I_EXEC, NULL);
-    queue_insert_tail(&g_threads_queue, queue_new_node(i_exe));
+    free(i_exe);
 
     for (int i = 0; i < NUM_OF_C_EXEC; i++) {
         pthread_t *c_exe = (pthread_t *)malloc(sizeof(pthread_t));
         pthread_create(c_exe, NULL, C_EXEC, NULL);
-        queue_insert_tail(&g_threads_queue, queue_new_node(c_exe));
+        free(c_exe);
     }
 }
 
@@ -410,26 +413,23 @@ void sut_shutdown() {
         usleep(100);
 
     // Command all kernel threads to stop.
-    pthread_mutex_lock(&g_parent_context_array_lock);
+    pthread_mutex_lock(&g_executor_context_array_lock);
     for (int i = 0; i < NUM_OF_C_EXEC + NUM_OF_I_EXEC; i++) {
-        g_parent_context_array[i]->run = false;
+        g_executor_context_array[i]->run = false;
     }
-    pthread_mutex_unlock(&g_parent_context_array_lock);
+    pthread_mutex_unlock(&g_executor_context_array_lock);
 
     // Wait for all kernel threads to complete.
-    while (queue_peek_front(&g_threads_queue)) {
-        struct queue_entry *entry = queue_pop_head(&g_threads_queue);
-        pthread_t *thread = (pthread_t *)entry->data;
-        pthread_join(*thread, NULL);
-        free(entry);
-        free(thread);
-    }
+    for (int i = 0; i < g_number_of_kernel_threads; i++)
+        pthread_join(g_executor_context_array[i]->thread, NULL);
 
     // Clear memory.
     for (int i = 0; i < NUM_OF_C_EXEC + NUM_OF_I_EXEC; i++) {
-        free_context(g_parent_context_array[i]->context);
-        free(g_parent_context_array[i]);
+        free_context(g_executor_context_array[i]->context);
+        free(g_executor_context_array[i]);
     }
+
+    free(g_executor_context_array);
 
     struct queue_entry *wasted_tcb = queue_pop_head(&g_wasted_tcb_queue);
     while (wasted_tcb) {
